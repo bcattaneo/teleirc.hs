@@ -1,8 +1,6 @@
 module Teleirc where
 
 import Telegram
-import qualified Data.Vector as V
-import qualified Data.HashMap.Strict as HM
 import Data.List
 import Network
 import System.IO
@@ -10,12 +8,14 @@ import System.Exit
 import Control.Arrow
 import Control.Monad.Reader
 import Control.Exception
+import UnliftIO.Concurrent
 import Text.Printf
 
 {-
 
     Requirements:
     - http-conduit
+    - UnliftIO
 
     TODO:
     - Reconnection?
@@ -51,7 +51,7 @@ connect = notify $ do
     return (Bot h)
   where
     notify a = bracket_
-        (printf "Connecting to %s ... " server >> hFlush stdout)
+        (printf "Connecting to %s... " server >> hFlush stdout)
         (putStrLn "done.")
         a
 
@@ -61,43 +61,64 @@ run :: Net ()
 run = do
     write "NICK" nick
     write "USER" (nick ++ " 0 * :" ++ real)
-    handle <- asks socket
-    listen handle 1 0 -- Main loop. Parameters: conn. handle, offset, count
+    asks socket >>= listen
  
 -- Process each line from the IRC server, and also check for new Telegram messages
-listen :: Handle -> Integer -> Integer -> Net ()
-listen h o c = do
-    let newCount = c + 1 -- TODO: Use this count as a timer, to start recieving Telegram messages at some point (not right away)
+listen :: Handle -> Net ()
+listen h = forever $ do
     s <- init `fmap` io (hGetLine h)
-    --io (putStrLn s) -- Print recieved message
-    updates <- io (getMessages o) -- Get new telegram messages
-    let newOffset = fst updates -- Store new offset for telegram messages
-    io ((mapM (\x -> privmsg $ x)) (snd updates)) -- Send all new telegram messages to the IRC channel
+    --io $ putStrLn s -- Print recieved message
     if ping s then pong s else command (clean s) -- Respond to ping or dispatch an IRC command
     eval (code s) -- Do something with specific IRC channel internal codes
-    if (isInfixOf "PRIVMSG" s) && (target s == chan) then io (sendMessage ("<" ++ sender s ++ "> " ++ clean s)) else return () -- Send channel messages to telegram
-    listen h newOffset newCount -- Back to loop
+    if ("PRIVMSG" `isInfixOf` s) && (target s == chan) then -- Send channel messages to telegram
+        do
+            io $ sendMessage $ message s
+            printLog "IRC" $ message s
+        else return ()
   where
     forever a   = a >> forever a
-    clean       = drop 1 . dropWhile (/= ':') . drop 1
-    code        = take 3 . drop 1 . dropWhile (/= ' ')
-    target      = drop 1 . dropWhile (/= ' ') . init . takeWhile (/= ':') . drop 1 . dropWhile (/= ' ')
-    sender      = takeWhile (/= '!') . drop 1
+    clean       = drop 1 . dropWhile (/= ':') . drop 1 -- Clean IRC PRIVMSG
+    code        = take 3 . drop 1 . dropWhile (/= ' ') -- IRC (server) message code
+    target      = drop 1 . dropWhile (/= ' ') . init . takeWhile (/= ':') . drop 1 . dropWhile (/= ' ') -- IRC PRIVMSG target
+    sender      = takeWhile (/= '!') . drop 1 -- IRC PRIVMSG message sender
     ping x      = "PING :" `isPrefixOf` x
     pong x      = write "PONG" (':' : drop 6 x)
+    message s   = "<" ++ sender s ++ "> " ++ clean s
+
+-- Check for new telegram messages in the
+-- background and send them to IRC
+telegramThread :: Integer -> Net ()
+telegramThread o = do
+    updates <- io $ getMessages o -- Get new telegram messages
+    let offset = fst updates -- Store offset for telegram messages
+    --io $ putStrLn ("New offset: " ++ (show offset)) -- Print new offset
+    mapM (\x -> printLog "TG" x) (snd updates) -- Print all messages
+    mapM privmsg $ snd updates -- Send all new telegram messages to the IRC channel
+    io $ threadDelay 5000000 -- Sleep for 5 seconds
+    telegramThread offset
+
+-- Print recieved Telegram or IRC message
+printLog :: String -> String -> Net ()
+printLog sender message = io $ putStrLn ("{" ++ sender ++ " -> " ++ getTarget sender ++ "} " ++ message)
+    where
+        getTarget "TG"  = "IRC"
+        getTarget _     = "TG"
 
 -- Dispatch an IRC command (channel message)
 command :: String -> Net ()
-command "!quit" = write "QUIT" ":Exiting" >> io (exitWith ExitSuccess)
-command "!join" = write "JOIN" chan
-command x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
+--command "!quit" = write "QUIT" ":Exiting" >> io (exitWith ExitSuccess)
+--command x | "!id " `isPrefixOf` x = privmsg (drop 4 x)
 command _ = return () -- ignore everything else
 
 -- Dispatch an IRC internal server code
 -- Shouldn't need to modify this
 eval :: String -> Net ()
 eval "433" = write "NICK" (nick ++ "_") -- Nick in use. Send new nickname
-eval "376" = write "JOIN" chan -- Join a channel after MOTD is recieved (some IRC networks need this)
+eval "376" = do 
+    write "JOIN" chan -- Join a channel after MOTD is recieved (some IRC networks need this)
+    forkIO $ telegramThread 1 -- Start telegram thread once finally connected to IRC. Send default offset 1
+    io $ putStrLn ("Started Telegram thread")
+    return ()
 eval _ = return () -- ignore everything else
 
 -- Send a privmsg to the current chan + server
@@ -109,7 +130,7 @@ write :: String -> String -> Net ()
 write s t = do
     h <- asks socket
     io $ hPrintf h "%s %s\r\n" s t
-    io $ printf    "> %s %s\n" s t
+    --io $ printf    "> %s %s\n" s t
 
 -- Convenience
 io :: IO a -> Net a

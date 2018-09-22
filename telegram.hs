@@ -148,13 +148,12 @@ getMessages offset = do
     let parsed = parseMessages response
     return (parsed)
 
--- This is the real s#it
--- Return last update_id (new offset) and all new messages
+-- Return last update_id (new offset, Integer) and all new messages as String
 -- TODO: Do something with non-text messages (maybe re-upload them and post link here)
 parseMessages :: TelegramResponse -> (Integer,[String])
 parseMessages (TelegramResponse { result = m }) = (newOffset allOffsets, from)
     where
-      from = map (\(Update {message = (Message {from = (From {first_name = x}), text = y})}) -> x ++ ": " ++ (text y)) m
+      from = map (\(Update {message = (Message {from = (From {first_name = x}), text = y})}) -> "<" ++ x ++ "> " ++ (text y)) m
       allOffsets = map (\(Update {update_id = x}) -> x) m
       newOffset [] = 1
       newOffset x = (last allOffsets) + 1

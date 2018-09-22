@@ -2,20 +2,27 @@
 
 Simple Telegram <-> IRC relay bot written in Haskell
 
-Requirements:
+Requirements
 ------
 * haskell
 * Modules:
     * http-conduit
+    * unliftio
 
-Running (with interpreter)
+Installing modules
+------
+```
+cabal install http-conduit unliftio
+```
+
+Running
 ------
 ```
 ghci main.hs
 ```
 And then just type `main`
 
-Running (compiled executable)
+Compiling
 ------
 ```
 ghc --make main.hs

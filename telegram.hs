@@ -35,7 +35,7 @@ instance FromJSON From where
 data Chat = Chat
   { idC :: Integer
   , title :: String
-  , usernameC :: String
+  , usernameC :: Maybe String
   , typeC :: String
   } deriving (Show)
 
@@ -43,7 +43,7 @@ instance FromJSON Chat where
   parseJSON (Object v) =
     Chat <$> v .: "id"
          <*> v .: "title"
-         <*> v .: "username"
+         <*> v .:? "username" -- optional
          <*> v .: "type"
 
 -- Messages JSON data types
@@ -76,7 +76,6 @@ instance FromJSON Update where
            <*> v .: "message"
 
 {-
-# TODO
 -- Photo JSON data types
 data Photo = Photo
   { file_id :: String
@@ -103,14 +102,6 @@ instance FromJSON TelegramResponse where
   parseJSON (Object v) =
     TelegramResponse <$> v .: "ok"
                      <*> v .: "result"
-
-{-
-$(deriveJSON defaultOptions ''TelegramResponse)
-$(deriveJSON defaultOptions ''Update)
-$(deriveJSON defaultOptions ''Message)
-$(deriveJSON defaultOptions ''From)
-$(deriveJSON defaultOptions ''Chat)
--}
 
 -- Return POST request
 buildPostReq :: String -> IO Request
@@ -153,10 +144,12 @@ getMessages offset = do
 parseMessages :: TelegramResponse -> (Integer,[String])
 parseMessages (TelegramResponse { result = m }) = (newOffset allOffsets, from)
     where
-      from = map (\(Update {message = (Message {from = (From {first_name = x}), text = y})}) -> "<" ++ x ++ "> " ++ (text y)) m
-      allOffsets = map (\(Update {update_id = x}) -> x) m
-      newOffset [] = 1
-      newOffset x = (last allOffsets) + 1
+      from = map (\(Update {message = (Message {from = (From {first_name = x}), text = y})}) -> "<" ++ x ++ "> " ++ (text y)) filtered
+      allOffsets = map (\(Update {update_id = x}) -> x) m -- Get all current message IDs
+      newOffset [] = 1 -- If no messages, define offset 1
+      newOffset x = (last allOffsets) + 1 -- New offset: (last message id) + 1
+      groupInt = read group :: Integer -- Convert group to Integer
+      filtered = filter (\(Update {message = (Message {chat = (Chat {idC = x})})}) -> x == groupInt) m -- Keep only group messages (discard private or other group messages)
       text m = case m of
         Just x -> x
         Nothing -> "[Not text. SOON]" -- TODO

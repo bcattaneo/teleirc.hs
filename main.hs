@@ -11,20 +11,6 @@ import Control.Exception
 import UnliftIO.Concurrent
 import Text.Printf
 
-{-
-
-    Requirements:
-    - http-conduit
-    - UnliftIO
-
-    TODO:
-    - Reconnection?
-    - Nickserv auth?
-    - Support and upload somewhere: photos, documents, and so on
-    - JSON config or user input config (or both)
-    - Multigroup support?
--}
-
 -- IRC configuration
 server = "irc.rizon.net"
 port   = 6667

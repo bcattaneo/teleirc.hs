@@ -1,6 +1,7 @@
 module Teleirc where
 
 import Telegram
+import Settings
 import Data.List
 import Network
 import System.IO
@@ -10,13 +11,6 @@ import Control.Monad.Reader
 import Control.Exception
 import UnliftIO.Concurrent
 import Text.Printf
-
--- IRC configuration
-server = "irc.rizon.net"
-port   = 6667
-chan   = "##pepe"
-nick   = "teleirc"
-real   = "teleirc.hs bot"
 
 -- The 'Net' monad, a wrapper over IO, carrying the bot's immutable state.
 type Net = ReaderT Bot IO

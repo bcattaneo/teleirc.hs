@@ -1,0 +1,13 @@
+module Settings where
+
+-- IRC configuration
+server = "irc.freenode.net"
+port   = 6667
+chan   = "#botters"
+nick   = "teleirc"
+real   = "teleirc"
+
+-- Telegram configuration
+token   = "YOUR BOT TOKEN HERE"
+group   = "YOUR GROUP ID HERE"
+url     = "https://api.telegram.org/bot"
